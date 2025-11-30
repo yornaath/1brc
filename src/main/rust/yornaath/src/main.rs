@@ -1,8 +1,8 @@
-use ahash::{HashMap, HashMapExt};
-use lexical_core::parse;
+
 use memmap2::MmapOptions;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::fmt::Write;
 use std::hash::{Hash, Hasher};
 use std::{error::Error, fs::File, sync::Arc};
@@ -18,12 +18,12 @@ const MAX_STATION: usize = 64;
 const MAX_MEASUREMENT: usize = 8;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let result = calculate()?;
+    let result = aggregate_measurements()?;
     println!("{}", result);
     Ok(())
 }
 
-fn calculate() -> Result<String, Box<dyn Error>> {
+fn aggregate_measurements() -> Result<String, Box<dyn Error>> {
     let file_path = "../../../measurements.txt";
     let file = File::open(file_path)?;
 
@@ -58,8 +58,7 @@ fn calculate() -> Result<String, Box<dyn Error>> {
 
         let start = chunk_start - start_offset + (if i == 0 { 0 } else { 2 });
 
-        let mut map: HashMap<SmallBuf<MAX_STATION>, Vec<SmallBuf<MAX_MEASUREMENT>>> =
-            HashMap::new();
+        let mut chunk_results: HashMap<SmallBuf<MAX_STATION>, (f32, f32, f32, f32)> = HashMap::new();
 
         let mut tuple_flag = false;
         let mut station: SmallBuf<MAX_STATION> = SmallBuf::new();
@@ -71,9 +70,18 @@ fn calculate() -> Result<String, Box<dyn Error>> {
             if *byte == SEMICOLON {
                 tuple_flag = true;
             } else if *byte == LINE_ENDING {
-                map.entry(station.clone())
-                    .or_default()
-                    .push(measurement.clone());
+                let temp = measurement.to_f32();
+
+                chunk_results.entry(station.clone())
+                    .and_modify(|e| {
+                        let min = e.0.min(temp);
+                        let sum = e.1 + temp;
+                        let count = e.2 + 1 as f32;
+                        let max = e.3.max(temp);
+                        *e = (min, sum, count, max);
+                    })
+                    .or_insert((temp, temp, 1 as f32, temp));
+
                 tuple_flag = false;
                 station.clear();
                 measurement.clear();
@@ -86,47 +94,21 @@ fn calculate() -> Result<String, Box<dyn Error>> {
             }
         }
 
-        let mut chunk_calculations: HashMap<SmallBuf<MAX_STATION>, (f32, f32, f32, f32)> =
-            HashMap::new();
-
-        for (key, value) in map.iter() {
-            let mut sum: f32 = 0.0;
-            let mut min: f32 = f32::INFINITY;
-            let mut max: f32 = f32::NEG_INFINITY;
-            let mut count: usize = 0;
-
-            for temp_bytes in value {
-                let temp = parse::<f32>(temp_bytes.as_slice()).unwrap();
-
-                sum += temp;
-                count += 1;
-
-                if temp < min {
-                    min = temp;
-                }
-                if temp > max {
-                    max = temp;
-                }
-            }
-
-            chunk_calculations.insert(key.clone(), (min, sum, count as f32, max));
-        }
-
-        return chunk_calculations;
+        return chunk_results;
     });
 
-    let summed_chunks = chunk_mapper.reduce(HashMap::new, |mut aggregator, next| {
-        for (key, value) in next.iter() {
+    let summed_chunks = chunk_mapper.reduce(HashMap::new, |mut aggregator, chunk| {
+        for (station, results) in chunk.iter() {
             aggregator
-                .entry(key.to_owned())
+                .entry(station.to_owned())
                 .and_modify(|e| {
-                    let min = e.0.min(value.0);
-                    let sum = e.1 + value.1;
-                    let count = e.2 + value.2;
-                    let max = e.3.max(value.3);
+                    let min = e.0.min(results.0);
+                    let sum = e.1 + results.1;
+                    let count = e.2 + results.2;
+                    let max = e.3.max(results.3);
                     *e = (min, sum, count, max);
                 })
-                .or_insert(*value);
+                .or_insert(*results);
         }
         aggregator
     });
@@ -214,6 +196,12 @@ impl<const N: usize> SmallBuf<N> {
         self.len += 1;
         // Optional: omit this check in release mode for absolute zero cost:
         //debug_assert!(self.len < N);
+    }
+
+    pub fn to_f32(&self) -> f32 {
+        let s = unsafe { std::str::from_utf8_unchecked(self.as_slice()) };
+        let value = s.parse::<f32>().unwrap();
+        value
     }
 
     pub fn extend_from_slice(&mut self, slice: &[u8]) {
