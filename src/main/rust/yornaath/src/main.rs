@@ -97,6 +97,7 @@ fn aggregate_measurements() -> Result<String, Box<dyn Error>> {
         return chunk_results;
     });
 
+    // can I parallelize this?
     let summed_chunks = chunk_mapper.reduce(HashMap::new, |mut aggregator, chunk| {
         for (station, results) in chunk.iter() {
             aggregator
@@ -112,12 +113,12 @@ fn aggregate_measurements() -> Result<String, Box<dyn Error>> {
         }
         aggregator
     });
-
+    
     let mut stations: Vec<_> = summed_chunks.keys().collect();
     stations.sort();
 
     let mut output_body: Vec<String> = Vec::with_capacity(stations.len());
-
+    
     for station in stations {
         let (min, sum, count, max) = summed_chunks.get(station).unwrap();
         let station_name = std::str::from_utf8(station.as_slice()).unwrap(); // no allocation
