@@ -9,6 +9,8 @@ memmap2 = "0.5"
 rayon = "1.7"
 ahash = "0.8.12"
 dashmap = "5"
+hashbrown = "0.16.1"
 
 [profile.release]
-  opt-level = "z" # Default for release, can be 0, 1, 2, 3, "s", or "z"
+  opt-level = 3
+  target-cpu = "native"
