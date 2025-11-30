@@ -1,11 +1,11 @@
 use ahash::{HashMap, HashMapExt};
+use lexical_core::parse;
 use memmap2::MmapOptions;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::cmp::Ordering;
+use std::fmt::Write;
+use std::hash::{Hash, Hasher};
 use std::{error::Error, fs::File, sync::Arc};
-use std::{
-    hash::{Hash, Hasher},
-};
 
 // const for semicolo in bytes
 // used for parsing lines
@@ -37,7 +37,7 @@ fn calculate() -> Result<String, Box<dyn Error>> {
     let chunk_count = cores * 8;
     let chunk_size = len / chunk_count;
 
-    let mapped_chunks = (0..chunk_count).into_par_iter().map(|i| {
+    let chunk_mapper = (0..chunk_count).into_par_iter().map(|i| {
         let chunk_start = i * chunk_size as usize;
         let chunk_end = ((i + 1) * chunk_size as usize).min(len);
 
@@ -57,7 +57,6 @@ fn calculate() -> Result<String, Box<dyn Error>> {
         }
 
         let start = chunk_start - start_offset + (if i == 0 { 0 } else { 2 });
-        let slice = &mmap[(start)..(chunk_end)];
 
         let mut map: HashMap<SmallBuf<MAX_STATION>, Vec<SmallBuf<MAX_MEASUREMENT>>> =
             HashMap::new();
@@ -66,14 +65,19 @@ fn calculate() -> Result<String, Box<dyn Error>> {
         let mut station: SmallBuf<MAX_STATION> = SmallBuf::new();
         let mut measurement: SmallBuf<MAX_MEASUREMENT> = SmallBuf::new();
 
+        let slice = &mmap[start..chunk_end];
+
         for byte in slice {
             if *byte == SEMICOLON {
                 tuple_flag = true;
             } else if *byte == LINE_ENDING {
-                map.entry(station).or_default().push(measurement);
+                map.entry(station.clone())
+                    .or_default()
+                    .push(measurement.clone());
+                
                 tuple_flag = false;
-                station = SmallBuf::new();
-                measurement = SmallBuf::new();
+                station.clear();
+                measurement.clear();
             } else {
                 if !tuple_flag {
                     station.push(*byte);
@@ -93,19 +97,17 @@ fn calculate() -> Result<String, Box<dyn Error>> {
             let mut count: usize = 0;
 
             for temp_bytes in value {
-                let temp = std::str::from_utf8(temp_bytes.as_slice())
-                    .unwrap()
-                    .parse::<f32>()
-                    .unwrap();
+                let temp = parse::<f32>(temp_bytes.as_slice()).unwrap();
 
                 sum += temp;
+                count += 1;
+
                 if temp < min {
                     min = temp;
                 }
                 if temp > max {
                     max = temp;
                 }
-                count += 1;
             }
 
             chunk_calculations.insert(key.clone(), (min, sum, count as f32, max));
@@ -114,11 +116,10 @@ fn calculate() -> Result<String, Box<dyn Error>> {
         return chunk_calculations;
     });
 
-    let reduced_chunks = mapped_chunks.reduce(HashMap::new, |mut a, b| {
-        //let start_time = Instant::now();
-        //a.extend(b);
-        for (key, value) in b.iter() {
-            a.entry(key.clone())
+    let summed_chunks = chunk_mapper.reduce(HashMap::new, |mut aggregator, next| {
+        for (key, value) in next.iter() {
+            aggregator
+                .entry(key.to_owned())
                 .and_modify(|e| {
                     let min = e.0.min(value.0);
                     let sum = e.1 + value.1;
@@ -126,26 +127,32 @@ fn calculate() -> Result<String, Box<dyn Error>> {
                     let max = e.3.max(value.3);
                     *e = (min, sum, count, max);
                 })
-                .or_insert(value.clone());
+                .or_insert(*value);
         }
-        a
+        aggregator
     });
 
-    let mut stations: Vec<_> = reduced_chunks.keys().collect();
+    let mut stations: Vec<_> = summed_chunks.keys().collect();
     stations.sort();
 
-    let mut output_body: Vec<String> = vec![];
+    let mut output_body: Vec<String> = Vec::with_capacity(stations.len());
 
     for station in stations {
-        let (min, sum, count, max) = reduced_chunks.get(station).unwrap();
+        let (min, sum, count, max) = summed_chunks.get(station).unwrap();
         let station_name = std::str::from_utf8(station.as_slice()).unwrap(); // no allocation
 
         let avg_temp = sum / count;
 
-        output_body.push(format!(
+        let mut line = String::with_capacity(station_name.len() + 32);
+
+        write!(
+            &mut line,
             "{}={:.1}/{:.1}/{:.1}",
             station_name, min, avg_temp, max
-        ));
+        )
+        .unwrap();
+
+        output_body.push(line);
     }
 
     let output_body = output_body.join(", ");
@@ -228,11 +235,6 @@ impl<const N: usize> SmallBuf<N> {
     #[inline(always)]
     pub fn as_slice(&self) -> &[u8] {
         &self.buf[..self.len]
-    }
-
-    #[inline(always)]
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
     }
 }
 

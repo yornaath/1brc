@@ -10,6 +10,7 @@ rayon = "1.7"
 ahash = "0.8.12"
 dashmap = "5"
 hashbrown = "0.16.1"
+lexical-core = "1.0.6"
 
 [profile.release]
   opt-level = 3
