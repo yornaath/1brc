@@ -74,7 +74,6 @@ fn calculate() -> Result<String, Box<dyn Error>> {
                 map.entry(station.clone())
                     .or_default()
                     .push(measurement.clone());
-                
                 tuple_flag = false;
                 station.clear();
                 measurement.clear();
@@ -237,21 +236,3 @@ impl<const N: usize> SmallBuf<N> {
         &self.buf[..self.len]
     }
 }
-
-// fn read_chunk(file: &mut File, start: u64, chunk_size: u64) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-//     let mut buffer = vec![start as u8; chunk_size as usize];
-//     file.read_at(&mut buffer, start)?;
-//     Ok(buffer)
-// }
-
-// fn read_whole_file() -> Result<(), Box<dyn Error>> {
-//     let file_path = "../../../data/measurements.txt";
-//     let mut file = File::open(file_path)?;
-//     for byt in file.bytes() {
-
-//     }
-//     let file_size = file.metadata()?.len();
-//     let mut buffer = vec![0; file_size as usize];
-//     file.read_to_end(&mut buffer)?;
-//     Ok(())
-// }
