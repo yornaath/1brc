@@ -1,0 +1,14 @@
+[package]
+name = "yornaath"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+num_cpus = "1.17.0"
+memmap2 = "0.5"
+rayon = "1.7"
+ahash = "0.8.12"
+dashmap = "5"
+
+[profile.release]
+  opt-level = "z" # Default for release, can be 0, 1, 2, 3, "s", or "z"
