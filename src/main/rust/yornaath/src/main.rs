@@ -1,330 +1,33 @@
-use ahash::{AHasher, HashMap, HashMapExt};
-//use hashbrown::{HashMap, hash_map::RawEntryMut};
+use ahash::{HashMap, HashMapExt};
 use memmap2::MmapOptions;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::cmp::Ordering;
-use std::{error::Error, fs::File, sync::Arc, time::Instant};
+use std::{error::Error, fs::File, sync::Arc};
 use std::{
-    fs,
-    hash::{BuildHasherDefault, Hash, Hasher},
+    hash::{Hash, Hasher},
 };
-fn main() -> Result<(), Box<dyn Error>> {
-    // let start_time = Instant::now();
-    // brc1()?;
-    // println!("brc1: Execution time: {:?}", Instant::now() - start_time);
-
-    // let start_time = Instant::now();
-    // brc2()?;
-    // println!("brc2: Execution time: {:?}", Instant::now() - start_time);
-
-    let start_time = Instant::now();
-    brc4()?;
-    println!("brc4: Execution time: {:?}", Instant::now() - start_time);
-
-    Ok(())
-}
 
 // const for semicolo in bytes
+// used for parsing lines
 const SEMICOLON: u8 = b';';
 const LINE_ENDING: u8 = b'\n';
 
-//type HBAHashMap<K, V> = HashMap<K, V, BuildHasherDefault<AHasher>>;
+// const for max station and measurement length
+// These could be tuned for the specific data and/or configurable by the consumer to suit the data
+const MAX_STATION: usize = 64;
+const MAX_MEASUREMENT: usize = 8;
 
-// fn brc1() -> Result<(), Box<dyn Error>> {
-//     let file_path = "../../../data/measurements.txt";
-//     let file = File::open(file_path)?;
-
-//     let mmap = unsafe { MmapOptions::new().map(&file)? };
-//     let mmap = Arc::new(mmap);
-
-//     let len = mmap.len();
-
-//     let cores = num_cpus::get_physical();
-//     let chunk_count = cores * 16;
-//     let chunk_size = len / chunk_count;
-
-//     let mapped_chunks = (0..chunk_count).into_par_iter().map(|i| {
-//         let chunk_start = i * chunk_size as usize;
-//         let chunk_end = ((i + 1) * chunk_size as usize).min(len);
-
-//         let mut start_slice = mmap[chunk_start..(chunk_start + 34)].to_vec();
-//         start_slice.reverse();
-
-//         let mut start_offset = 0;
-
-//         if i != 0 {
-//             for i in 0..64 {
-//                 let byte = mmap[chunk_start - i];
-//                 start_offset += 1;
-//                 if byte == LINE_ENDING {
-//                     break;
-//                 }
-//             }
-//         }
-
-//         let start = chunk_start - start_offset + (if i == 0 { 0 } else { 2 });
-//         let slice = &mmap[(start)..(chunk_end)];
-
-//         let mut map: HashMap<Vec<u8>, Vec<Vec<u8>>> = HashMap::new();
-
-//         let mut tuple_flag = false;
-//         let mut station = Vec::new();
-//         let mut measurement = Vec::new();
-
-//         for byte in slice {
-//             if *byte == SEMICOLON {
-//                 tuple_flag = true;
-//             } else if *byte == LINE_ENDING {
-//                 map.entry(station).or_default().push(measurement);
-//                 tuple_flag = false;
-//                 station = Vec::new();
-//                 measurement = Vec::new();
-//             } else {
-//                 if !tuple_flag {
-//                     station.push(*byte);
-//                 } else {
-//                     measurement.push(*byte);
-//                 }
-//             }
-//         }
-
-//         return map;
-//     });
-
-//     let reduced_chunks = mapped_chunks.reduce(HashMap::new, |mut a, b| {
-//         //let start_time = Instant::now();
-//         a.extend(b);
-//         //println!("extend time: {:?}", Instant::now() - start_time);
-//         a
-//     });
-
-//     // (0..chunk_count).into_par_iter().map(|i| {
-//     //     // get chunk from a
-//     //     let chunk = a.get(i).unwrap();
-//     // });
-
-//     Ok(())
-// }
-
-// fn brc2() -> Result<(), Box<dyn Error>> {
-//     let file_path = "../../../data/measurements.txt";
-//     let file = File::open(file_path)?;
-
-//     let mmap = unsafe { MmapOptions::new().map(&file)? };
-//     let mmap = Arc::new(mmap);
-
-//     let len = mmap.len();
-
-//     let cores = num_cpus::get_physical();
-//     let chunk_count = cores * 8;
-//     let chunk_size = len / chunk_count;
-
-//     let mapped_chunks = (0..chunk_count).into_par_iter().map(|i| {
-//         let chunk_start = i * chunk_size as usize;
-//         let chunk_end = ((i + 1) * chunk_size as usize).min(len);
-
-//         let mut start_slice = mmap[chunk_start..(chunk_start + 34)].to_vec();
-//         start_slice.reverse();
-
-//         let mut start_offset = 0;
-
-//         if i != 0 {
-//             for i in 0..64 {
-//                 let byte = mmap[chunk_start - i];
-//                 start_offset += 1;
-//                 if byte == LINE_ENDING {
-//                     break;
-//                 }
-//             }
-//         }
-
-//         let start = chunk_start - start_offset + (if i == 0 { 0 } else { 2 });
-//         let slice = &mmap[(start)..(chunk_end)];
-
-//         const MAX_STATION: usize = 64;
-//         const MAX_MEASUREMENT: usize = 8;
-
-//         let mut map: HashMap<SmallBuf<MAX_STATION>, Vec<SmallBuf<MAX_MEASUREMENT>>> =
-//             HashMap::new();
-
-//         let mut tuple_flag = false;
-//         let mut station: SmallBuf<MAX_STATION> = SmallBuf::new();
-//         let mut measurement: SmallBuf<MAX_MEASUREMENT> = SmallBuf::new();
-
-//         for byte in slice {
-//             if *byte == SEMICOLON {
-//                 tuple_flag = true;
-//             } else if *byte == LINE_ENDING {
-//                 map.entry(station).or_default().push(measurement);
-//                 tuple_flag = false;
-//                 station = SmallBuf::new();
-//                 measurement = SmallBuf::new();
-//             } else {
-//                 if !tuple_flag {
-//                     station.push(*byte);
-//                 } else {
-//                     measurement.push(*byte);
-//                 }
-//             }
-//         }
-
-//         return map;
-//     });
-
-//     let reduced_chunks = mapped_chunks.reduce(HashMap::new, |mut a, b| {
-//         //let start_time = Instant::now();
-//         a.extend(b);
-//         //println!("extend time: {:?}", Instant::now() - start_time);
-//         a
-//     });
-
-//     // (0..chunk_count).into_par_iter().map(|i| {
-//     //     // get chunk from a
-//     //     let chunk = a.get(i).unwrap();
-//     // });
-
-//     Ok(())
-// }
-
-fn brc3() -> Result<(), Box<dyn Error>> {
-    let file_path = "../../../measurements.txt";
-    let file = File::open(file_path)?;
-
-    let mmap = unsafe { MmapOptions::new().map(&file)? };
-    let mmap = Arc::new(mmap);
-
-    let len = mmap.len();
-
-    let cores = num_cpus::get_physical();
-    let chunk_count = cores * 8;
-    let chunk_size = len / chunk_count;
-
-    let mapped_chunks = (0..chunk_count).into_par_iter().map(|i| {
-        let chunk_start = i * chunk_size as usize;
-        let chunk_end = ((i + 1) * chunk_size as usize).min(len);
-
-        let mut start_slice = mmap[chunk_start..(chunk_start + 34)].to_vec();
-        start_slice.reverse();
-
-        let mut start_offset = 0;
-
-        if i != 0 {
-            for i in 0..128 {
-                let byte = mmap[chunk_start - i];
-                start_offset += 1;
-                if byte == LINE_ENDING {
-                    break;
-                }
-            }
-        }
-
-        let start = chunk_start - start_offset + (if i == 0 { 0 } else { 2 });
-        let slice = &mmap[(start)..(chunk_end)];
-
-        const MAX_STATION: usize = 64;
-        const MAX_MEASUREMENT: usize = 8;
-
-        let mut map: HashMap<SmallBuf<MAX_STATION>, Vec<SmallBuf<MAX_MEASUREMENT>>> =
-            HashMap::new();
-
-        let mut tuple_flag = false;
-        let mut station: SmallBuf<MAX_STATION> = SmallBuf::new();
-        let mut measurement: SmallBuf<MAX_MEASUREMENT> = SmallBuf::new();
-
-        for byte in slice {
-            if *byte == SEMICOLON {
-                tuple_flag = true;
-            } else if *byte == LINE_ENDING {
-                map.entry(station).or_default().push(measurement);
-                tuple_flag = false;
-                station = SmallBuf::new();
-                measurement = SmallBuf::new();
-            } else {
-                if !tuple_flag {
-                    station.push(*byte);
-                } else {
-                    measurement.push(*byte);
-                }
-            }
-        }
-
-        return map;
-    });
-
-    let reduced_chunks = mapped_chunks.reduce(HashMap::new, |mut a, b| {
-        //let start_time = Instant::now();
-        //a.extend(b);
-        for (key, value) in b.iter() {
-            a.entry(key.clone())
-                .and_modify(|e| e.extend_from_slice(value.as_slice()))
-                .or_insert(value.clone());
-        }
-        a
-    });
-
-    let mut stations: Vec<_> = reduced_chunks.keys().collect();
-    stations.sort();
-
-    let mut output_body: Vec<String> = vec![];
-
-    let start_time = Instant::now();
-
-    for station in stations {
-        let measurements = reduced_chunks.get(station).unwrap();
-        let station_name = std::str::from_utf8(station.as_slice()).unwrap(); // no allocation
-
-        let mut sum: f32 = 0.0;
-        let mut min: f32 = f32::INFINITY;
-        let mut max: f32 = f32::NEG_INFINITY;
-        let mut count: usize = 0;
-
-        for temp_bytes in measurements {
-            let temp = std::str::from_utf8(temp_bytes.as_slice())
-                .unwrap()
-                .parse::<f32>()
-                .unwrap();
-
-            sum += temp;
-            if temp < min {
-                min = temp;
-            }
-            if temp > max {
-                max = temp;
-            }
-            count += 1;
-        }
-
-        let avg_temp = sum / count as f32;
-
-        output_body.push(format!(
-            "{}={:.1}/{:.1}/{:.1}",
-            station_name, min, avg_temp, max
-        ));
-    }
-    println!("output body time: {:?}", Instant::now() - start_time);
-
-    let start_time = Instant::now();
-    let output_body = output_body.join(", ");
-    println!("join time: {:?}", Instant::now() - start_time);
-
-    let start_time = Instant::now();
-    let output = format!("{{{}}}", output_body);
-    println!("format time: {:?}", Instant::now() - start_time);
-
-    println!("{}", output);
-
-    // (0..chunk_count).into_par_iter().map(|i| {
-    //     // get chunk from a
-    //     let chunk = a.get(i).unwrap();
-    // });
-
+fn main() -> Result<(), Box<dyn Error>> {
+    let result = calculate()?;
+    println!("{}", result);
     Ok(())
 }
 
-fn brc4() -> Result<(), Box<dyn Error>> {
+fn calculate() -> Result<String, Box<dyn Error>> {
     let file_path = "../../../measurements.txt";
     let file = File::open(file_path)?;
 
+    // map the file to memory, IO disk so reading isnt a bottleneck
     let mmap = unsafe { MmapOptions::new().map(&file)? };
     let mmap = Arc::new(mmap);
 
@@ -355,9 +58,6 @@ fn brc4() -> Result<(), Box<dyn Error>> {
 
         let start = chunk_start - start_offset + (if i == 0 { 0 } else { 2 });
         let slice = &mmap[(start)..(chunk_end)];
-
-        const MAX_STATION: usize = 64;
-        const MAX_MEASUREMENT: usize = 8;
 
         let mut map: HashMap<SmallBuf<MAX_STATION>, Vec<SmallBuf<MAX_MEASUREMENT>>> =
             HashMap::new();
@@ -436,8 +136,6 @@ fn brc4() -> Result<(), Box<dyn Error>> {
 
     let mut output_body: Vec<String> = vec![];
 
-    let start_time = Instant::now();
-
     for station in stations {
         let (min, sum, count, max) = reduced_chunks.get(station).unwrap();
         let station_name = std::str::from_utf8(station.as_slice()).unwrap(); // no allocation
@@ -454,9 +152,7 @@ fn brc4() -> Result<(), Box<dyn Error>> {
 
     let output = format!("{{{}}}", output_body);
 
-    println!("{}", output);
-
-    Ok(())
+    Ok(output)
 }
 
 #[derive(Clone)]
