@@ -178,7 +178,8 @@ impl<const N: usize> Hash for SmallBuf<N> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         // Hash only the slice that contains meaningful bytes
         state.write(&self.buf[..self.len]);
-        self.len.hash(state); // Include length for uniqueness
+        state.write_u8(self.len as u8);
+        //self.len.hash(state); // Include length for uniqueness
     }
 }
 
